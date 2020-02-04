@@ -40,6 +40,17 @@ type peerRecordManager struct {
 }
 
 func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.PrivKey, initialAddrs []multiaddr.Multiaddr, excludeLocalAddrs bool) (*peerRecordManager, error) {
+// NewPeerRecordManager creates a peerRecordManager that will subscribe to the given event.Bus
+// and listen for changes in the local Host's addresses, emitting new signed peer.PeerRecords
+// in response. The new records will be contained in event.EvtLocalPeerRecordUpdated events
+// and emitted on the event bus.
+//
+// PeerRecords will be signed with the given private key, which must be the libp2p Host's
+// identity key for the resulting records to be valid.
+//
+// If initialAddrs is non-empty, a PeerRecord will be created immediately and emitted on
+// the bus, without waiting for an event.LocalPeerAddressesUpdated event to trigger an
+// update.
 	hostID, err := peer.IDFromPrivateKey(hostKey)
 	if err != nil {
 		return nil, err
@@ -78,6 +89,10 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 	return m, nil
 }
 
+// LatestRecord returns the most recently constructed signed PeerRecord.
+// If you have a direct reference to the peerRecordManager, this method
+// gives you a simple way to access the latest record without pulling
+// from the event bus.
 func (m *peerRecordManager) LatestRecord() *record.Envelope {
 	if m == nil {
 		return nil
