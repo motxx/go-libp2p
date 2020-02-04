@@ -22,72 +22,13 @@ func TestPeerRecordManagerEmitsPeerRecord(t *testing.T) {
 
 	ctx := context.Background()
 	var initialAddrs []multiaddr.Multiaddr
-	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs, false)
+	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs)
 	if err != nil {
 		t.Fatalf("error creating peerRecordManager: %v", err)
 	}
 
 	addrs := []multiaddr.Multiaddr{
 		multiaddr.StringCast("/ip4/1.2.3.4/tcp/42"),
-	}
-	addrEvent := makeAddrEvent(addrs)
-	err = emitter.Emit(addrEvent)
-	test.AssertNilError(t, err)
-
-	evt := getNextPeerRecordEvent(t, sub)
-	peerRec := peerRecordFromEvent(t, evt)
-	test.AssertAddressesEqual(t, addrs, peerRec.Addrs)
-}
-
-func TestPeerRecordExcludesLocalAddrsIfFlagIsSet(t *testing.T) {
-	bus, emitter, sub := setupEventBus(t)
-	priv, _, err := test.RandTestKeyPair(crypto.Ed25519, 256)
-	if err != nil {
-		t.Fatalf("error generating test keypair: %v", err)
-	}
-
-	ctx := context.Background()
-	var initialAddrs []multiaddr.Multiaddr
-	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs, true)
-	if err != nil {
-		t.Fatalf("error creating peerRecordManager: %v", err)
-	}
-
-	addrs := []multiaddr.Multiaddr{
-		multiaddr.StringCast("/ip4/1.2.3.4/tcp/42"),
-		multiaddr.StringCast("/ip4/192.168.1.3/tcp/4321"),
-		multiaddr.StringCast("/ip4/127.0.0.1/tcp/1234"),
-	}
-	addrEvent := makeAddrEvent(addrs)
-	err = emitter.Emit(addrEvent)
-	test.AssertNilError(t, err)
-
-	evt := getNextPeerRecordEvent(t, sub)
-	peerRec := peerRecordFromEvent(t, evt)
-	expected := []multiaddr.Multiaddr{
-		multiaddr.StringCast("/ip4/1.2.3.4/tcp/42"),
-	}
-	test.AssertAddressesEqual(t, expected, peerRec.Addrs)
-}
-
-func TestPeerRecordIncludesLocalAddrsIfFlagIsUnset(t *testing.T) {
-	bus, emitter, sub := setupEventBus(t)
-	priv, _, err := test.RandTestKeyPair(crypto.Ed25519, 256)
-	if err != nil {
-		t.Fatalf("error generating test keypair: %v", err)
-	}
-
-	ctx := context.Background()
-	var initialAddrs []multiaddr.Multiaddr
-	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs, false)
-	if err != nil {
-		t.Fatalf("error creating peerRecordManager: %v", err)
-	}
-
-	addrs := []multiaddr.Multiaddr{
-		multiaddr.StringCast("/ip4/1.2.3.4/tcp/42"),
-		multiaddr.StringCast("/ip4/192.168.1.3/tcp/4321"),
-		multiaddr.StringCast("/ip4/127.0.0.1/tcp/1234"),
 	}
 	addrEvent := makeAddrEvent(addrs)
 	err = emitter.Emit(addrEvent)
@@ -109,7 +50,7 @@ func TestPeerRecordManagerEmitsRecordImmediatelyIfInitialAddrsAreProvided(t *tes
 	initialAddrs := []multiaddr.Multiaddr{
 		multiaddr.StringCast("/ip4/1.2.3.4/tcp/42"),
 	}
-	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs, false)
+	_, err = NewPeerRecordManager(ctx, bus, priv, initialAddrs)
 	if err != nil {
 		t.Fatalf("error creating peerRecordManager: %v", err)
 	}

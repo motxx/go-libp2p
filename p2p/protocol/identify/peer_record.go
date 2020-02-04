@@ -9,7 +9,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/record"
 	"github.com/multiformats/go-multiaddr"
-	manet "github.com/multiformats/go-multiaddr-net"
 	"sync"
 )
 
@@ -29,9 +28,8 @@ type peerRecordManager struct {
 	hostID     peer.ID
 	signingKey crypto.PrivKey
 
-	ctx               context.Context
-	excludeLocalAddrs bool
-	subscriptions     struct {
+	ctx           context.Context
+	subscriptions struct {
 		localAddrsUpdated event.Subscription
 	}
 	emitters struct {
@@ -39,7 +37,6 @@ type peerRecordManager struct {
 	}
 }
 
-func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.PrivKey, initialAddrs []multiaddr.Multiaddr, excludeLocalAddrs bool) (*peerRecordManager, error) {
 // NewPeerRecordManager creates a peerRecordManager that will subscribe to the given event.Bus
 // and listen for changes in the local Host's addresses, emitting new signed peer.PeerRecords
 // in response. The new records will be contained in event.EvtLocalPeerRecordUpdated events
@@ -51,16 +48,16 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 // If initialAddrs is non-empty, a PeerRecord will be created immediately and emitted on
 // the bus, without waiting for an event.LocalPeerAddressesUpdated event to trigger an
 // update.
+func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.PrivKey, initialAddrs []multiaddr.Multiaddr) (*peerRecordManager, error) {
 	hostID, err := peer.IDFromPrivateKey(hostKey)
 	if err != nil {
 		return nil, err
 	}
 
 	m := &peerRecordManager{
-		ctx:               ctx,
-		signingKey:        hostKey,
-		hostID:            hostID,
-		excludeLocalAddrs: excludeLocalAddrs,
+		ctx:        ctx,
+		signingKey: hostKey,
+		hostID:     hostID,
 	}
 
 	if len(initialAddrs) != 0 {
@@ -80,11 +77,11 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 		return nil, err
 	}
 
-	go m.handleEvents()
-
 	if m.latest != nil {
 		m.emitLatest()
 	}
+
+	go m.handleEvents()
 
 	return m, nil
 }
@@ -152,9 +149,7 @@ func (m *peerRecordManager) makeSignedPeerRecord(current []multiaddr.Multiaddr) 
 		if a == nil {
 			continue
 		}
-		if !m.excludeLocalAddrs || manet.IsPublicAddr(a) {
-			addrs = append(addrs, a)
-		}
+		addrs = append(addrs, a)
 	}
 
 	rec := peer.NewPeerRecord()

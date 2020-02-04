@@ -25,17 +25,3 @@ func DisableSignedAddrSupportForTesting() Option {
 		cfg.disableSignedAddrSupport = true
 	}
 }
-
-// ExcludeLocalAddrsFromPeerRecord controls whether the signed PeerRecords that are exchanged
-// with other peers during the identify exchange will include local addresses.
-//
-// Addresses are considered "local" if they are IP loopback addresses, or if they belong to
-// a reserved private IP address range.
-//
-// By default, local addresses are included in PeerRecords. To exclude them,
-// pass ExcludeLocalAddrsFromPeerRecord(true) into NewIDService.
-func ExcludeLocalAddrsFromPeerRecord(exclude bool) Option {
-	return func(cfg *config) {
-		cfg.excludeLocalAddrsFromPeerRecord = exclude
-	}
-}
