@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/record"
 	"github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr-net"
+	"sync"
 )
 
 // peerRecordManager creates new signed peer.PeerRecords that can
@@ -23,6 +24,7 @@ import (
 // will immediately receive the current record when they subscribe, with future
 // records delivered in future events.
 type peerRecordManager struct {
+	lock       sync.RWMutex
 	latest     *record.Envelope
 	hostID     peer.ID
 	signingKey crypto.PrivKey
@@ -33,7 +35,7 @@ type peerRecordManager struct {
 		localAddrsUpdated event.Subscription
 	}
 	emitters struct {
-		evtLocalRoutingStateUpdated event.Emitter
+		evtLocalPeerRecordUpdated event.Emitter
 	}
 }
 
@@ -62,7 +64,7 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 	if err != nil {
 		return nil, err
 	}
-	m.emitters.evtLocalRoutingStateUpdated, err = bus.Emitter(&event.EvtLocalPeerRecordUpdated{}, eventbus.Stateful)
+	m.emitters.evtLocalPeerRecordUpdated, err = bus.Emitter(&event.EvtLocalPeerRecordUpdated{}, eventbus.Stateful)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +82,8 @@ func (m *peerRecordManager) LatestRecord() *record.Envelope {
 	if m == nil {
 		return nil
 	}
+	m.lock.RLock()
+	defer m.lock.RUnlock()
 	return m.latest
 }
 
@@ -111,13 +115,17 @@ func (m *peerRecordManager) update(evt event.EvtLocalAddressesUpdated) {
 		log.Warnf("error creating signed peer record: %v", err)
 		return
 	}
+	m.lock.Lock()
 	m.latest = envelope
+	m.lock.Unlock()
 	m.emitLatest()
 }
 
 func (m *peerRecordManager) emitLatest() {
-	stateEvt := event.EvtLocalPeerRecordUpdated{SignedRecord: m.latest}
-	err := m.emitters.evtLocalRoutingStateUpdated.Emit(stateEvt)
+	m.lock.RLock()
+	stateEvt := event.EvtLocalPeerRecordUpdated{Record: m.latest}
+	m.lock.RUnlock()
+	err := m.emitters.evtLocalPeerRecordUpdated.Emit(stateEvt)
 	if err != nil {
 		log.Warnf("error emitting event for updated peer record: %v", err)
 	}

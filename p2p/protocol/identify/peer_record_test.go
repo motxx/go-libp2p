@@ -115,7 +115,7 @@ func TestPeerRecordManagerEmitsRecordImmediatelyIfInitialAddrsAreProvided(t *tes
 	}
 
 	recEvent := getNextPeerRecordEvent(t, sub)
-	rec, err := recEvent.SignedRecord.Record()
+	rec, err := recEvent.Record.Record()
 	test.AssertNilError(t, err)
 	test.AssertAddressesEqual(t, initialAddrs, rec.(*peer.PeerRecord).Addrs)
 }
@@ -148,7 +148,7 @@ func getNextPeerRecordEvent(t *testing.T, sub event.Subscription) event.EvtLocal
 
 func peerRecordFromEvent(t *testing.T, evt event.EvtLocalPeerRecordUpdated) *peer.PeerRecord {
 	t.Helper()
-	rec, err := evt.SignedRecord.Record()
+	rec, err := evt.Record.Record()
 	if err != nil {
 		t.Fatalf("error getting PeerRecord from event: %v", err)
 		return nil
