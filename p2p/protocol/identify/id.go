@@ -30,7 +30,11 @@ import (
 var log = logging.Logger("net/identify")
 
 // ID is the protocol.ID of the Identify Service.
-const ID = "/ipfs/id/1.0.0"
+const ID = "/p2p/id/1.1.0"
+
+// LegacyID is the protocol.ID of version 1.0.0 of the identify
+// service, which does not support signed peer records.
+const LegacyID = "/ipfs/id/1.0.0"
 
 // LibP2PVersion holds the current protocol version for a client running this code
 // TODO(jbenet): fix the versioning mess.
@@ -85,7 +89,6 @@ type IDService struct {
 	observedAddrs *ObservedAddrSet
 
 	peerRecordManager *peerRecordManager
-	useSignedAddrs    bool
 
 	subscriptions struct {
 		localProtocolsUpdated  event.Subscription
@@ -113,10 +116,9 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 		Host:      h,
 		UserAgent: userAgent,
 
-		ctx:            ctx,
-		currid:         make(map[network.Conn]chan struct{}),
-		observedAddrs:  NewObservedAddrSet(ctx),
-		useSignedAddrs: !cfg.disableSignedAddrSupport,
+		ctx:           ctx,
+		currid:        make(map[network.Conn]chan struct{}),
+		observedAddrs: NewObservedAddrSet(ctx),
 	}
 
 	// handle local protocol handler updates, and push deltas to peers.
@@ -146,7 +148,9 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 	}
 
 	h.SetStreamHandler(ID, s.requestHandler)
+	h.SetStreamHandler(LegacyID, s.requestHandler)
 	h.SetStreamHandler(IDPush, s.pushHandler)
+	h.SetStreamHandler(LegacyIDPush, s.pushHandler)
 	h.SetStreamHandler(IDDelta, s.deltaHandler)
 	h.Network().Notify((*netNotifiee)(s))
 	return s
@@ -219,9 +223,10 @@ func (ids *IDService) IdentifyConn(c network.Conn) {
 	}
 
 	s.SetProtocol(ID)
+	protocolIDs := []string{ID, LegacyID}
 
 	// ok give the response to our handler.
-	if err := msmux.SelectProtoOrFail(ID, s); err != nil {
+	if _, err := msmux.SelectOneOf(protocolIDs, s); err != nil {
 		log.Event(context.TODO(), "IdentifyOpenFailed", c.RemotePeer(), logging.Metadata{"error": err})
 		s.Reset()
 		return
@@ -230,13 +235,23 @@ func (ids *IDService) IdentifyConn(c network.Conn) {
 	ids.responseHandler(s)
 }
 
+func protoSupportsPeerRecords(proto protocol.ID) bool {
+	switch proto {
+	case ID:
+		return true
+	case IDPush:
+		return true
+	}
+	return false
+}
+
 func (ids *IDService) requestHandler(s network.Stream) {
 	defer helpers.FullClose(s)
 	c := s.Conn()
 
 	w := ggio.NewDelimitedWriter(s)
 	mes := pb.Identify{}
-	ids.populateMessage(&mes, s.Conn())
+	ids.populateMessage(&mes, s.Conn(), protoSupportsPeerRecords(s.Protocol()))
 	w.WriteMsg(&mes)
 
 	log.Debugf("%s sent message to %s %s", ID, c.RemotePeer(), c.RemoteMultiaddr())
@@ -256,14 +271,15 @@ func (ids *IDService) responseHandler(s network.Stream) {
 	defer func() { go helpers.FullClose(s) }()
 
 	log.Debugf("%s received message from %s %s", s.Protocol(), c.RemotePeer(), c.RemoteMultiaddr())
-	ids.consumeMessage(&mes, c)
+	ids.consumeMessage(&mes, c, protoSupportsPeerRecords(s.Protocol()))
 }
 
-func (ids *IDService) broadcast(proto protocol.ID, payloadWriter func(s network.Stream)) {
+func (ids *IDService) broadcast(protos []protocol.ID, payloadWriter func(s network.Stream)) {
 	var wg sync.WaitGroup
 
+	protoStrs := protocol.ConvertToStrings(protos)
 	ctx, cancel := context.WithTimeout(ids.ctx, 30*time.Second)
-	ctx = network.WithNoDial(ctx, string(proto))
+	ctx = network.WithNoDial(ctx, protoStrs[0])
 
 	pstore := ids.Host.Peerstore()
 	for _, p := range ids.Host.Network().Peers() {
@@ -290,13 +306,13 @@ func (ids *IDService) broadcast(proto protocol.ID, payloadWriter func(s network.
 			}
 
 			// avoid the unnecessary stream if the peer does not support the protocol.
-			if sup, err := pstore.SupportsProtocols(p, string(proto)); err != nil && len(sup) == 0 {
+			if sup, err := pstore.SupportsProtocols(p, protoStrs...); err != nil && len(sup) == 0 {
 				// the peer does not support the required protocol.
 				return
 			}
 			// if the peerstore query errors, we go ahead anyway.
 
-			s, err := ids.Host.NewStream(ctx, p, proto)
+			s, err := ids.Host.NewStream(ctx, p, protos...)
 			if err != nil {
 				log.Debugf("error opening push stream to %s: %s", p, err.Error())
 				return
@@ -324,7 +340,7 @@ func (ids *IDService) broadcast(proto protocol.ID, payloadWriter func(s network.
 	}()
 }
 
-func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn) {
+func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn, usePeerRecords bool) {
 	// set protocols this node is currently handling
 	protos := ids.Host.Mux().Protocols()
 	mes.Protocols = make([]string, len(protos))
@@ -336,24 +352,29 @@ func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn) {
 	// "public" address, at least in relation to us.
 	mes.ObservedAddr = c.RemoteMultiaddr().Bytes()
 
-	// set listen addrs, get our latest addrs from Host.
-	laddrs := ids.Host.Addrs()
-	mes.ListenAddrs = make([][]byte, len(laddrs))
-	for i, addr := range laddrs {
-		mes.ListenAddrs[i] = addr.Bytes()
-	}
-	log.Debugf("%s sent listen addrs to %s: %s", c.LocalPeer(), c.RemotePeer(), laddrs)
-
-	// Generate a signed peer record containing our listen addresses and
-	// send it along with the unsigned addrs
-	rec := ids.peerRecordManager.LatestRecord()
-	if ids.useSignedAddrs && rec != nil {
-		recBytes, err := rec.Marshal()
-		if err != nil {
-			log.Warnf("error marshaling signed peer record: %v", err)
+	if usePeerRecords {
+		// Generate a signed peer record containing our listen addresses and
+		// send it instead of unsigned addrs
+		rec := ids.peerRecordManager.LatestRecord()
+		if rec == nil {
+			log.Errorf("latest PeerRecord does not exist. identify message incomplete!")
 		} else {
-			mes.SignedPeerRecord = recBytes
+			recBytes, err := rec.Marshal()
+			if err != nil {
+				log.Warnf("error marshaling peer record: %v", err)
+			} else {
+				mes.SignedPeerRecord = recBytes
+				log.Debugf("%s sent peer record to %s", c.LocalPeer(), c.RemotePeer())
+			}
 		}
+	} else {
+		// set listen addrs, get our latest addrs from Host.
+		laddrs := ids.Host.Addrs()
+		mes.ListenAddrs = make([][]byte, len(laddrs))
+		for i, addr := range laddrs {
+			mes.ListenAddrs[i] = addr.Bytes()
+		}
+		log.Debugf("%s sent listen addrs to %s: %s", c.LocalPeer(), c.RemotePeer(), laddrs)
 	}
 
 	// set our public key
@@ -384,7 +405,7 @@ func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn) {
 	mes.AgentVersion = &av
 }
 
-func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn) {
+func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn, usePeerRecords bool) {
 	p := c.RemotePeer()
 
 	// mes.Protocols
@@ -416,7 +437,7 @@ func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn) {
 
 	// add certified addresses for the peer, if they sent us a signed peer record
 	var signedPeerRecord *record.Envelope
-	if ids.useSignedAddrs {
+	if usePeerRecords {
 		var err error
 		signedPeerRecord, err = signedPeerRecordFromMessage(mes)
 		if err != nil {
@@ -442,8 +463,6 @@ func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn) {
 		_, addErr := cab.ConsumePeerRecord(signedPeerRecord, ttl)
 		if addErr != nil {
 			log.Errorf("error adding signed addrs to peerstore: %v", addErr)
-			// fall back to adding unsigned addrs
-			ids.Host.Peerstore().AddAddrs(p, lmaddrs, ttl)
 		}
 	} else {
 		ids.Host.Peerstore().AddAddrs(p, lmaddrs, ttl)

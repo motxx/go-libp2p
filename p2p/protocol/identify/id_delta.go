@@ -57,7 +57,7 @@ func (ids *IDService) fireProtocolDelta(evt event.EvtLocalProtocolsUpdated) {
 		}
 		log.Debugf("%s sent delta update to %s: %s", IDDelta, c.RemotePeer(), c.RemoteMultiaddr())
 	}
-	ids.broadcast(IDDelta, deltaWriter)
+	ids.broadcast([]protocol.ID{IDDelta}, deltaWriter)
 }
 
 // consumeDelta processes an incoming delta from a peer, updating the peerstore

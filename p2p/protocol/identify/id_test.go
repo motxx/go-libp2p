@@ -446,8 +446,7 @@ func TestUserAgent(t *testing.T) {
 	}
 }
 
-// make sure that we still use the unsigned listen addresses if the remote peer
-// does not send us a signed address record
+// make sure that we still support older peers using "legacy" versions of identify
 func TestCompatibilityWithPeersThatDoNotSupportSignedAddrs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -457,10 +456,11 @@ func TestCompatibilityWithPeersThatDoNotSupportSignedAddrs(t *testing.T) {
 	defer h2.Close()
 	defer h1.Close()
 
-	h1p := h1.ID()
 	h2p := h2.ID()
-	ids1 := identify.NewIDService(ctx, h1)
-	ids2 := identify.NewIDService(ctx, h2, identify.DisableSignedAddrSupportForTesting())
+	ids := identify.NewIDService(ctx, h1)
+
+	// remove new protocol ID from h2, so it only responds to "legacy" protocol id
+	h2.RemoveStreamHandler(identify.ID)
 
 	h2pi := h2.Peerstore().PeerInfo(h2p)
 	if err := h1.Connect(ctx, h2pi); err != nil {
@@ -472,19 +472,11 @@ func TestCompatibilityWithPeersThatDoNotSupportSignedAddrs(t *testing.T) {
 		t.Fatal("should have a conn here")
 	}
 
-	ids1.IdentifyConn(h1t2c[0])
+	ids.IdentifyConn(h1t2c[0])
 
 	// the IDService should be opened automatically, by the network.
 	// what we should see now is that both peers know about each others listen addresses.
 	t.Log("test peer1 has peer2 addrs correctly")
 	testKnowsAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // has them
 	testHasCertifiedAddrs(t, h1, h2p, []ma.Multiaddr{})   // should not have signed addrs
-
-	c := h2.Network().ConnsToPeer(h1.ID())
-	if len(c) < 1 {
-		t.Fatal("should have connection by now at least.")
-	}
-	ids2.IdentifyConn(c[0])
-	testKnowsAddrs(t, h2, h1p, h1.Peerstore().Addrs(h1p)) // has them
-	testHasCertifiedAddrs(t, h2, h1p, []ma.Multiaddr{})   // no signed addrs
 }
