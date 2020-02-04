@@ -346,13 +346,13 @@ func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn) {
 
 	// Generate a signed peer record containing our listen addresses and
 	// send it along with the unsigned addrs
-	signedRecord := ids.peerRecordManager.LatestRecord()
-	if ids.useSignedAddrs && signedRecord != nil {
-		envelopeBytes, err := signedRecord.Marshal()
+	rec := ids.peerRecordManager.LatestRecord()
+	if ids.useSignedAddrs && rec != nil {
+		recBytes, err := rec.Marshal()
 		if err != nil {
-			log.Warnf("error marshaling signed routing state: %v", err)
+			log.Warnf("error marshaling signed peer record: %v", err)
 		} else {
-			mes.SignedPeerRecord = envelopeBytes
+			mes.SignedPeerRecord = recBytes
 		}
 	}
 
