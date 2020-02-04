@@ -439,7 +439,7 @@ func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn) {
 	// add signed addrs if we have them and the peerstore supports them
 	cab, ok := peerstore.GetCertifiedAddrBook(ids.Host.Peerstore())
 	if ok && signedPeerRecord != nil {
-		addErr := cab.ProcessPeerRecord(signedPeerRecord, ttl)
+		_, addErr := cab.ConsumePeerRecord(signedPeerRecord, ttl)
 		if addErr != nil {
 			log.Errorf("error adding signed addrs to peerstore: %v", addErr)
 			// fall back to adding unsigned addrs

@@ -137,7 +137,7 @@ func (m *peerRecordManager) makeSignedPeerRecord(current []multiaddr.Multiaddr) 
 	rec := peer.NewPeerRecord()
 	rec.PeerID = m.hostID
 	rec.Addrs = addrs
-	return rec.Sign(m.signingKey)
+	return record.Seal(rec, m.signingKey)
 }
 
 func addrsFromEvent(evt event.EvtLocalAddressesUpdated) []multiaddr.Multiaddr {

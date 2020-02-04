@@ -13,13 +13,13 @@ require (
 	github.com/libp2p/go-libp2p-autonat v0.1.1
 	github.com/libp2p/go-libp2p-blankhost v0.1.4
 	github.com/libp2p/go-libp2p-circuit v0.1.4
-	github.com/libp2p/go-libp2p-core v0.3.1-0.20200121152518-5a523a102629
+	github.com/libp2p/go-libp2p-core v0.3.1-0.20200204201746-48fdd0fe436b
 	github.com/libp2p/go-libp2p-discovery v0.2.0
 	github.com/libp2p/go-libp2p-loggables v0.1.0
 	github.com/libp2p/go-libp2p-mplex v0.2.1
 	github.com/libp2p/go-libp2p-nat v0.0.5
 	github.com/libp2p/go-libp2p-netutil v0.1.0
-	github.com/libp2p/go-libp2p-peerstore v0.1.5-0.20200121162712-1f4670bb6c34
+	github.com/libp2p/go-libp2p-peerstore v0.1.5-0.20200204202600-1ef508a3b277
 	github.com/libp2p/go-libp2p-secio v0.2.1
 	github.com/libp2p/go-libp2p-swarm v0.2.2
 	github.com/libp2p/go-libp2p-testing v0.1.1
