@@ -13,7 +13,7 @@ require (
 	github.com/libp2p/go-libp2p-autonat v0.1.1
 	github.com/libp2p/go-libp2p-blankhost v0.1.4
 	github.com/libp2p/go-libp2p-circuit v0.1.4
-	github.com/libp2p/go-libp2p-core v0.3.1-0.20200204211556-97eee5a8dabf
+	github.com/libp2p/go-libp2p-core v0.3.1-0.20200210195324-7b2888dfdb65
 	github.com/libp2p/go-libp2p-discovery v0.2.0
 	github.com/libp2p/go-libp2p-loggables v0.1.0
 	github.com/libp2p/go-libp2p-mplex v0.2.1
@@ -35,6 +35,8 @@ require (
 	github.com/multiformats/go-multiaddr-net v0.1.2
 	github.com/multiformats/go-multistream v0.1.1
 	github.com/whyrusleeping/mdns v0.0.0-20190826153040-b9b60ed33aa9
+	golang.org/x/crypto v0.0.0-20200210191831-6ca56c2f2e2b // indirect
+	golang.org/x/tools v0.0.0-20200210192313-1ace956b0e17 // indirect
 )
 
 go 1.12
