@@ -621,15 +621,23 @@ func updatedAddrsEqual(a, b []event.UpdatedAddress) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	// ignore ordering in addr lists
-	aSet := make(map[string]struct{})
+
+	// We can't use an UpdatedAddress directly as a map key, since
+	// Multiaddr is an interface, and go won't know how to compare
+	// for equality. So we convert to this little struct, which
+	// stores the multiaddr as a string.
+	type ua struct {
+		action  event.AddrAction
+		addrStr string
+	}
+	aSet := make(map[ua]struct{})
 	for _, addr := range a {
-		s := string(addr.Action) + "::" + string(addr.Address.Bytes())
-		aSet[s] = struct{}{}
+		k := ua{action: addr.Action, addrStr: string(addr.Address.Bytes())}
+		aSet[k] = struct{}{}
 	}
 	for _, addr := range b {
-		s := string(addr.Action) + "::" + string(addr.Address.Bytes())
-		_, ok := aSet[s]
+		k := ua{action: addr.Action, addrStr: string(addr.Address.Bytes())}
+		_, ok := aSet[k]
 		if !ok {
 			return false
 		}
