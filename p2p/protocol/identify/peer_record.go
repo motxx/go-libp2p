@@ -135,8 +135,13 @@ func (m *peerRecordManager) update(evt event.EvtLocalAddressesUpdated) {
 
 func (m *peerRecordManager) emitLatest() {
 	m.lock.RLock()
+	defer m.lock.RUnlock()
+	if m.latest == nil {
+		log.Warnf("emitLatest called, but no latest record exists")
+		return
+	}
+
 	stateEvt := event.EvtLocalPeerRecordUpdated{Record: m.latest}
-	m.lock.RUnlock()
 	err := m.emitters.evtLocalPeerRecordUpdated.Emit(stateEvt)
 	if err != nil {
 		log.Warnf("error emitting event for updated peer record: %v", err)
