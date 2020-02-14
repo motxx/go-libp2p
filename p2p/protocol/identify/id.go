@@ -236,13 +236,7 @@ func (ids *IDService) IdentifyConn(c network.Conn) {
 }
 
 func protoSupportsPeerRecords(proto protocol.ID) bool {
-	switch proto {
-	case ID:
-		return true
-	case IDPush:
-		return true
-	}
-	return false
+	return proto == ID || proto == IDPush
 }
 
 func (ids *IDService) requestHandler(s network.Stream) {
