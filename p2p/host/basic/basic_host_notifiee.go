@@ -23,8 +23,7 @@ func (b *basicHostNotifiee) Connected(n network.Network, v network.Conn) {
 	lk.Lock()
 	defer lk.Unlock()
 
-	// Is this our first connection with the peer ?
-	if len(n.ConnsToPeer(p)) == 1 {
+	if n.Connectedness(p) == network.Connected {
 		evt := event.EvtPeerStateChange{v, network.Connected}
 		b.basicHost().emitters.evtPeerStateChange.Emit(evt)
 	}
