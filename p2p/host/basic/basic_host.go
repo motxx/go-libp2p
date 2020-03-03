@@ -90,6 +90,8 @@ type BasicHost struct {
 		evtPeerStateChange       event.Emitter
 		evtLocalProtocolsUpdated event.Emitter
 	}
+
+	stripedConnNotifLocks [256]sync.Mutex
 }
 
 var _ host.Host = (*BasicHost)(nil)

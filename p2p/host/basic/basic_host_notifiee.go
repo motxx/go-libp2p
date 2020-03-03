@@ -15,8 +15,15 @@ func (b *basicHostNotifiee) basicHost() *BasicHost {
 }
 
 func (b *basicHostNotifiee) Connected(n network.Network, v network.Conn) {
-	// Is this our first connection with the peer ?
 	p := v.RemotePeer()
+
+	// use the last byte of the peer as the key for the striped lock
+	indexForLk := len(p) - 1
+	lk := &b.stripedConnNotifLocks[p[indexForLk]]
+	lk.Lock()
+	defer lk.Unlock()
+
+	// Is this our first connection with the peer ?
 	if len(n.ConnsToPeer(p)) == 1 {
 		evt := event.EvtPeerStateChange{v, network.Connected}
 		b.basicHost().emitters.evtPeerStateChange.Emit(evt)
@@ -24,8 +31,15 @@ func (b *basicHostNotifiee) Connected(n network.Network, v network.Conn) {
 }
 
 func (b *basicHostNotifiee) Disconnected(n network.Network, v network.Conn) {
-	// Are we no longer connected to the peer ?
 	p := v.RemotePeer()
+
+	// use the last byte of the peer as the key for the striped lock
+	indexForLk := len(p) - 1
+	lk := &b.stripedConnNotifLocks[p[indexForLk]]
+	lk.Lock()
+	defer lk.Unlock()
+
+	// Are we no longer connected to the peer ?
 	if n.Connectedness(p) == network.NotConnected {
 		evt := event.EvtPeerStateChange{v, network.NotConnected}
 		b.basicHost().emitters.evtPeerStateChange.Emit(evt)
