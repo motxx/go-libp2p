@@ -84,6 +84,9 @@ type IDService struct {
 
 	addrMu sync.Mutex
 
+	peerrec   *record.Envelope
+	peerrecMu sync.RWMutex
+
 	// our own observed addresses.
 	// TODO: instead of expiring, remove these when we disconnect
 	observedAddrs *ObservedAddrSet
@@ -142,9 +145,13 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 	}
 
 	hostKey := h.Peerstore().PrivKey(h.ID())
-	s.peerRecordManager, err = NewPeerRecordManager(ctx, h.EventBus(), hostKey, h.Addrs())
-	if err != nil {
-		log.Warnf("identify service not tracking routing state changes; err: %s", err)
+	if hostKey == nil {
+		log.Errorf("identify service does not have host key; cannot create peer records")
+	} else {
+		s.peerRecordManager, err = NewPeerRecordManager(ctx, h.EventBus(), hostKey, h.Addrs())
+		if err != nil {
+			log.Warnf("identify service not tracking routing state changes; err: %s", err)
+		}
 	}
 
 	h.SetStreamHandler(ID, s.requestHandler)
@@ -182,6 +189,11 @@ func (ids *IDService) handleProtosChanged(evt interface{}) {
 }
 
 func (ids *IDService) handlePeerRecordUpdated(evt interface{}) {
+	ids.peerrecMu.Lock()
+	rec := (evt.(event.EvtLocalPeerRecordUpdated)).Record
+	ids.peerrec = &rec
+	ids.peerrecMu.Unlock()
+
 	log.Debug("triggering push based on updated local PeerRecord")
 	ids.Push()
 }
@@ -347,9 +359,10 @@ func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn, usePeerR
 	mes.ObservedAddr = c.RemoteMultiaddr().Bytes()
 
 	if usePeerRecords {
-		// Generate a signed peer record containing our listen addresses and
-		// send it instead of unsigned addrs
-		rec := ids.peerRecordManager.LatestRecord()
+		ids.peerrecMu.RLock()
+		rec := ids.peerrec
+		ids.peerrecMu.RUnlock()
+
 		if rec == nil {
 			log.Errorf("latest PeerRecord does not exist. identify message incomplete!")
 		} else {

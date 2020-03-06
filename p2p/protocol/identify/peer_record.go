@@ -2,8 +2,6 @@ package identify
 
 import (
 	"context"
-	"fmt"
-	"sync"
 
 	"github.com/libp2p/go-eventbus"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -24,8 +22,6 @@ import (
 // will immediately receive the current record when they subscribe, with future
 // records delivered in future events.
 type peerRecordManager struct {
-	lock       sync.RWMutex
-	latest     *record.Envelope
 	hostID     peer.ID
 	signingKey crypto.PrivKey
 
@@ -61,14 +57,6 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 		hostID:     hostID,
 	}
 
-	if len(initialAddrs) != 0 {
-		initialRec, err := m.makeSignedPeerRecord(initialAddrs)
-		if err != nil {
-			return nil, fmt.Errorf("error constructing initial peer record: %w", err)
-		}
-		m.latest = initialRec
-	}
-
 	m.subscriptions.localAddrsUpdated, err = bus.Subscribe(&event.EvtLocalAddressesUpdated{}, eventbus.BufSize(128))
 	if err != nil {
 		return nil, err
@@ -78,36 +66,17 @@ func NewPeerRecordManager(ctx context.Context, bus event.Bus, hostKey crypto.Pri
 		return nil, err
 	}
 
-	if m.latest != nil {
-		m.emitLatest()
-	}
-
 	go m.handleEvents()
 
-	return m, nil
-}
-
-// LatestRecord returns the most recently constructed signed PeerRecord.
-// If you have a direct reference to the peerRecordManager, this method
-// gives you a simple way to access the latest record without pulling
-// from the event bus.
-func (m *peerRecordManager) LatestRecord() *record.Envelope {
-	if m == nil {
-		return nil
+	if len(initialAddrs) != 0 {
+		m.update(initialAddrs)
 	}
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-	return m.latest
+	return m, nil
 }
 
 func (m *peerRecordManager) handleEvents() {
 	sub := m.subscriptions.localAddrsUpdated
-	defer func() {
-		_ = sub.Close()
-		// drain the channel.
-		for range sub.Out() {
-		}
-	}()
+	defer sub.Close()
 
 	for {
 		select {
@@ -115,37 +84,25 @@ func (m *peerRecordManager) handleEvents() {
 			if !more {
 				return
 			}
-			m.update(evt.(event.EvtLocalAddressesUpdated))
+			e := evt.(event.EvtLocalAddressesUpdated)
+			m.update(addrsFromEvent(e))
 		case <-m.ctx.Done():
 			return
 		}
 	}
 }
 
-func (m *peerRecordManager) update(evt event.EvtLocalAddressesUpdated) {
-	envelope, err := m.makeSignedPeerRecord(addrsFromEvent(evt))
+func (m *peerRecordManager) update(addrs []multiaddr.Multiaddr) {
+	envelope, err := m.makeSignedPeerRecord(addrs)
 	if err != nil {
-		log.Warnf("error creating signed peer record: %v", err)
-		return
-	}
-	m.lock.Lock()
-	m.latest = envelope
-	m.lock.Unlock()
-	m.emitLatest()
-}
-
-func (m *peerRecordManager) emitLatest() {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-	if m.latest == nil {
-		log.Warnf("emitLatest called, but no latest record exists")
+		log.Errorf("error creating signed peer record: %v", err)
 		return
 	}
 
-	stateEvt := event.EvtLocalPeerRecordUpdated{Record: m.latest}
-	err := m.emitters.evtLocalPeerRecordUpdated.Emit(stateEvt)
+	stateEvt := event.EvtLocalPeerRecordUpdated{Record: *envelope}
+	err = m.emitters.evtLocalPeerRecordUpdated.Emit(stateEvt)
 	if err != nil {
-		log.Warnf("error emitting event for updated peer record: %v", err)
+		log.Errorf("error emitting event for updated peer record: %v", err)
 	}
 }
 
