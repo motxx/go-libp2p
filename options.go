@@ -1,7 +1,7 @@
 package libp2p
 
 // This file contains all libp2p configuration options (except the defaults,
-// those are in defaults.go)
+// those are in defaults.go).
 
 import (
 	"fmt"
@@ -249,7 +249,7 @@ func EnableAutoRelay() Option {
 
 // StaticRelays configures known relays for autorelay; when this option is enabled
 // then the system will use the configured relays instead of querying the DHT to
-// discover relays
+// discover relays.
 func StaticRelays(relays []peer.AddrInfo) Option {
 	return func(cfg *Config) error {
 		cfg.StaticRelays = append(cfg.StaticRelays, relays...)
@@ -257,7 +257,7 @@ func StaticRelays(relays []peer.AddrInfo) Option {
 	}
 }
 
-// DefaultStaticRelays configures the static relays to use the known PL-operated relays
+// DefaultStaticRelays configures the static relays to use the known PL-operated relays.
 func DefaultStaticRelays() Option {
 	return func(cfg *Config) error {
 		for _, addr := range autorelay.DefaultRelays {
@@ -292,7 +292,7 @@ func FilterAddresses(addrs ...*net.IPNet) Option {
 }
 
 // Filters configures libp2p to use the given filters for accepting/denying
-// certain addresses. Filters offers more control and should be use when the
+// certain addresses. Filters offers more control and should be used when the
 // addresses you want to accept/deny are not known ahead of time and can
 // dynamically change.
 func Filters(filters *filter.Filters) Option {

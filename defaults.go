@@ -44,7 +44,7 @@ var DefaultPeerstore Option = func(cfg *Config) error {
 	return cfg.Apply(Peerstore(pstoremem.NewPeerstore()))
 }
 
-// RandomIdentity generates a random identity (default behaviour)
+// RandomIdentity generates a random identity. (default behaviour)
 var RandomIdentity = func(cfg *Config) error {
 	priv, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 	if err != nil {
@@ -53,7 +53,7 @@ var RandomIdentity = func(cfg *Config) error {
 	return cfg.Apply(Identity(priv))
 }
 
-// DefaultListenAddrs configures libp2p to use default listen address
+// DefaultListenAddrs configures libp2p to use default listen address.
 var DefaultListenAddrs = func(cfg *Config) error {
 	defaultIP4ListenAddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/tcp/0")
 	if err != nil {
@@ -70,7 +70,7 @@ var DefaultListenAddrs = func(cfg *Config) error {
 	))
 }
 
-// DefaultEnableRelay enables relay dialing and listening by default
+// DefaultEnableRelay enables relay dialing and listening by default.
 var DefaultEnableRelay = func(cfg *Config) error {
 	return cfg.Apply(EnableRelay())
 }
