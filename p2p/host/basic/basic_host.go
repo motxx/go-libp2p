@@ -77,6 +77,7 @@ type BasicHost struct {
 	maResolver *madns.Resolver
 	cmgr       connmgr.ConnManager
 	eventbus   event.Bus
+	peerrecmgr *peerRecordManager
 
 	AddrsFactory AddrsFactory
 
@@ -144,6 +145,16 @@ func NewHost(ctx context.Context, net network.Network, opts *HostOpts) (*BasicHo
 	}
 	if h.emitters.evtLocalAddrsUpdated, err = h.eventbus.Emitter(&event.EvtLocalAddressesUpdated{}); err != nil {
 		return nil, err
+	}
+
+	hostKey := h.Peerstore().PrivKey(h.ID())
+	if hostKey == nil {
+		log.Warn("unable to access host key. peer record support disabled.")
+	} else {
+		h.peerrecmgr, err = NewPeerRecordManager(ctx, h.EventBus(), hostKey, h.Addrs())
+		if err != nil {
+			log.Errorf("error creating peer record manager. peer record support disabled. err: %s", err)
+		}
 	}
 
 	h.proc = goprocessctx.WithContextAndTeardown(ctx, func() error {

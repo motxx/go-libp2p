@@ -3,6 +3,7 @@ package basichost
 import (
 	"bytes"
 	"context"
+	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"io"
 	"reflect"
 	"sort"
@@ -90,16 +91,35 @@ func TestProtocolHandlerEvents(t *testing.T) {
 	}
 	defer sub.Close()
 
-	assert := func(added, removed []protocol.ID) {
-		var next event.EvtLocalProtocolsUpdated
-		select {
-		case evt := <-sub.Out():
-			next = evt.(event.EvtLocalProtocolsUpdated)
-			break
-		case <-time.After(5 * time.Second):
-			t.Fatal("event not received in 5 seconds")
+	// the identify service adds new protocol handlers shortly after the host
+	// starts. this helps us filter those events out, since they're unrelated
+	// to the test.
+	isIdentify := func(evt event.EvtLocalProtocolsUpdated) bool {
+		for _, p := range evt.Added {
+			if p == identify.ID || p == identify.IDPush {
+				return true
+			}
 		}
+		return false
+	}
 
+	nextEvent := func() event.EvtLocalProtocolsUpdated {
+		for {
+			select {
+			case evt := <-sub.Out():
+				next := evt.(event.EvtLocalProtocolsUpdated)
+				if isIdentify(next) {
+					continue
+				}
+				return next
+			case <-time.After(5 * time.Second):
+				t.Fatal("event not received in 5 seconds")
+			}
+		}
+	}
+
+	assert := func(added, removed []protocol.ID) {
+		next := nextEvent()
 		if !reflect.DeepEqual(added, next.Added) {
 			t.Errorf("expected added: %v; received: %v", added, next.Added)
 		}

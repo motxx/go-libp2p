@@ -3,6 +3,7 @@ package identify_test
 import (
 	"context"
 	"fmt"
+	"github.com/libp2p/go-libp2p-core/record"
 	"reflect"
 	"sort"
 	"testing"
@@ -35,6 +36,8 @@ func subtestIDService(t *testing.T) {
 
 	h1 := blhost.NewBlankHost(swarmt.GenSwarm(t, ctx))
 	h2 := blhost.NewBlankHost(swarmt.GenSwarm(t, ctx))
+	generatePeerRecord(t, h1)
+	generatePeerRecord(t, h2)
 
 	h1p := h1.ID()
 	h2p := h2.ID()
@@ -209,6 +212,36 @@ func testHasPublicKey(t *testing.T, h host.Host, p peer.ID, shouldBe ic.PubKey) 
 		t.Error("could not make key")
 	} else if p != p2 {
 		t.Error("key does not match peerid")
+	}
+}
+
+// we're using BlankHost in our tests, which doesn't automatically generate peer records
+// like BasicHost. This generates a record and puts it on the host's event bus, which
+// will cause the identify service to start supporting new protocol versions that
+// depend on peer records being available.
+func generatePeerRecord(t *testing.T, h host.Host) {
+	t.Helper()
+
+	key := h.Peerstore().PrivKey(h.ID())
+	if key == nil {
+		t.Fatal("no private key for host")
+	}
+
+	rec := peer.NewPeerRecord()
+	rec.PeerID = h.ID()
+	rec.Addrs = h.Addrs()
+	signed, err := record.Seal(rec, key)
+	if err != nil {
+		t.Fatalf("error generating peer record: %s", err)
+	}
+	evt := event.EvtLocalPeerRecordUpdated{Record: *signed}
+	emitter, err := h.EventBus().Emitter(&evt, eventbus.Stateful)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = emitter.Emit(evt)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -447,11 +480,14 @@ func TestIdentifyDeltaWhileIdentifyingConn(t *testing.T) {
 	// replace the original identify handler by one that blocks until we close the block channel.
 	// this allows us to control how long identify runs.
 	block := make(chan struct{})
-	h1.RemoveStreamHandler(identify.ID)
-	h1.SetStreamHandler(identify.ID, func(s network.Stream) {
+	handler := func(s network.Stream) {
 		<-block
 		go helpers.FullClose(s)
-	})
+	}
+	h1.RemoveStreamHandler(identify.ID)
+	h1.RemoveStreamHandler(identify.LegacyID)
+	h1.SetStreamHandler(identify.ID, handler)
+	h1.SetStreamHandler(identify.LegacyID, handler)
 
 	// from h2 connect to h1.
 	if err := h2.Connect(ctx, peer.AddrInfo{ID: h1.ID(), Addrs: h1.Addrs()}); err != nil {
@@ -542,12 +578,14 @@ func TestCompatibilityWithPeersThatDoNotSupportSignedAddrs(t *testing.T) {
 	defer h2.Close()
 	defer h1.Close()
 
-	h2p := h2.ID()
 	ids := identify.NewIDService(ctx, h1)
+	_ = identify.NewIDService(ctx, h2)
 
-	// remove new protocol ID from h2, so it only responds to "legacy" protocol id
-	h2.RemoveStreamHandler(identify.ID)
+	// generate initial peer record only for h1. this will cause h1 to enable
+	// the new protocols, but h2 will still use legacy protos
+	generatePeerRecord(t, h1)
 
+	h2p := h2.ID()
 	h2pi := h2.Peerstore().PeerInfo(h2p)
 	if err := h1.Connect(ctx, h2pi); err != nil {
 		t.Fatal(err)
@@ -559,10 +597,18 @@ func TestCompatibilityWithPeersThatDoNotSupportSignedAddrs(t *testing.T) {
 	}
 
 	ids.IdentifyConn(h1t2c[0])
-
 	// the IDService should be opened automatically, by the network.
 	// what we should see now is that both peers know about each others listen addresses.
 	t.Log("test peer1 has peer2 addrs correctly")
 	testKnowsAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p)) // has them
 	testHasCertifiedAddrs(t, h1, h2p, []ma.Multiaddr{})   // should not have signed addrs
+
+	// double check that it works when both peers support the new protos
+	// enable new protos for h2 by generating a peer record
+	generatePeerRecord(t, h2)
+
+	// if we re-identify, h1 should now have certified addrs for h2
+	ids.IdentifyConn(h1t2c[0])
+	t.Log("test peer1 has peer2 certified addrs correctly")
+	testHasCertifiedAddrs(t, h1, h2p, h2.Peerstore().Addrs(h2p))
 }

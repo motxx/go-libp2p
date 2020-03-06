@@ -85,17 +85,17 @@ type IDService struct {
 
 	addrMu sync.Mutex
 
-	peerrec   *record.Envelope
-	peerrecMu sync.RWMutex
+	enableNewProtos sync.Once
+	peerrec         *record.Envelope
+	peerrecMu       sync.RWMutex
 
 	// our own observed addresses.
 	// TODO: instead of expiring, remove these when we disconnect
 	observedAddrs *ObservedAddrSet
 
-	peerRecordManager *peerRecordManager
-
 	subscriptions struct {
 		localProtocolsUpdated  event.Subscription
+		localAddrsUpdated      event.Subscription
 		localPeerRecordUpdated event.Subscription
 	}
 	emitters struct {
@@ -137,9 +137,15 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 	}
 	s.subscriptions.localPeerRecordUpdated, err = h.EventBus().Subscribe(&event.EvtLocalPeerRecordUpdated{}, eventbus.BufSize(128))
 	if err != nil {
-		log.Warnf("identify service not subscribed to local routing state changes; err: %s", err)
+		log.Warnf("identify service not subscribed to local peer record changes; err: %s", err)
 	} else {
 		go s.handleEvents(s.subscriptions.localPeerRecordUpdated, s.handlePeerRecordUpdated)
+	}
+	s.subscriptions.localAddrsUpdated, err = h.EventBus().Subscribe(&event.EvtLocalAddressesUpdated{}, eventbus.BufSize(128))
+	if err != nil {
+		log.Warnf("identify service not subscribed to address changes. err: %s", err)
+	} else {
+		go s.handleEvents(s.subscriptions.localAddrsUpdated, s.handleLocalAddrsUpdated)
 	}
 
 	s.emitters.evtPeerProtocolsUpdated, err = h.EventBus().Emitter(&event.EvtPeerProtocolsUpdated{})
@@ -155,22 +161,10 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 		log.Warnf("identify service not emitting identification failed events; err: %s", err)
 	}
 
-	hostKey := h.Peerstore().PrivKey(h.ID())
-	if hostKey == nil {
-		log.Errorf("identify service does not have host key; cannot create peer records")
-	} else {
-		s.peerRecordManager, err = NewPeerRecordManager(ctx, h.EventBus(), hostKey, h.Addrs())
-		if err != nil {
-			log.Errorf("identify service not tracking peer record changes; err: %s", err)
-		}
-	}
-
-	// without a peer record manager, we can only support the legacy protocols
-	if s.peerRecordManager != nil {
-		h.SetStreamHandler(IDPush, s.pushHandler)
-		h.SetStreamHandler(IDDelta, s.deltaHandler)
-	}
-
+	// register protocols that depend on peer records immediately.
+	// those that do will be registered when we receive the first
+	// peer record on the event bus
+	h.SetStreamHandler(IDDelta, s.deltaHandler)
 	h.SetStreamHandler(LegacyID, s.requestHandler)
 	h.SetStreamHandler(LegacyIDPush, s.pushHandler)
 
@@ -179,12 +173,7 @@ func NewIDService(ctx context.Context, h host.Host, opts ...Option) *IDService {
 }
 
 func (ids *IDService) handleEvents(sub event.Subscription, handler func(interface{})) {
-	defer func() {
-		_ = sub.Close()
-		// drain the channel.
-		for range sub.Out() {
-		}
-	}()
+	defer sub.Close()
 
 	for {
 		select {
@@ -203,11 +192,24 @@ func (ids *IDService) handleProtosChanged(evt interface{}) {
 	ids.fireProtocolDelta(evt.(event.EvtLocalProtocolsUpdated))
 }
 
+func (ids *IDService) handleLocalAddrsUpdated(evt interface{}) {
+	log.Debug("triggering push based on updated local addresses")
+	ids.Push()
+}
+
 func (ids *IDService) handlePeerRecordUpdated(evt interface{}) {
 	ids.peerrecMu.Lock()
+	existed := ids.peerrec != nil
 	rec := (evt.(event.EvtLocalPeerRecordUpdated)).Record
 	ids.peerrec = &rec
 	ids.peerrecMu.Unlock()
+
+	if !existed {
+		ids.enableNewProtos.Do(func() {
+			ids.Host.SetStreamHandler(ID, ids.requestHandler)
+			ids.Host.SetStreamHandler(IDPush, ids.pushHandler)
+		})
+	}
 
 	log.Debug("triggering push based on updated local PeerRecord")
 	ids.Push()
@@ -261,16 +263,23 @@ func (ids *IDService) IdentifyConn(c network.Conn) {
 		return
 	}
 
-	s.SetProtocol(ID)
+	ids.peerrecMu.RLock()
+	havePeerRec := ids.peerrec != nil
+	ids.peerrecMu.RUnlock()
+
 	protocolIDs := []string{ID, LegacyID}
+	if !havePeerRec {
+		protocolIDs = []string{LegacyID}
+	}
 
 	// ok give the response to our handler.
-	if _, err := msmux.SelectOneOf(protocolIDs, s); err != nil {
+	var selectedProto string
+	if selectedProto, err = msmux.SelectOneOf(protocolIDs, s); err != nil {
 		log.Event(context.TODO(), "IdentifyOpenFailed", c.RemotePeer(), logging.Metadata{"error": err})
 		s.Reset()
 		return
 	}
-
+	s.SetProtocol(protocol.ID(selectedProto))
 	ids.responseHandler(s)
 }
 
@@ -391,11 +400,11 @@ func (ids *IDService) populateMessage(mes *pb.Identify, c network.Conn, usePeerR
 		ids.peerrecMu.RUnlock()
 
 		if rec == nil {
-			log.Errorf("latest PeerRecord does not exist. identify message incomplete!")
+			log.Errorf("latest peer record does not exist. identify message incomplete!")
 		} else {
 			recBytes, err := rec.Marshal()
 			if err != nil {
-				log.Warnf("error marshaling peer record: %v", err)
+				log.Errorf("error marshaling peer record: %v", err)
 			} else {
 				mes.SignedPeerRecord = recBytes
 				log.Debugf("%s sent peer record to %s", c.LocalPeer(), c.RemotePeer())
@@ -479,7 +488,7 @@ func (ids *IDService) consumeMessage(mes *pb.Identify, c network.Conn, usePeerRe
 		var err error
 		signedPeerRecord, err = signedPeerRecordFromMessage(mes)
 		if err != nil {
-			log.Warnf("error getting routing state from Identify message: %v", err)
+			log.Errorf("error getting peer record from Identify message: %v", err)
 		}
 	}
 
