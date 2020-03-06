@@ -24,7 +24,7 @@ func (b *basicHostNotifiee) Connected(n network.Network, v network.Conn) {
 	defer lk.Unlock()
 
 	if n.Connectedness(p) == network.Connected {
-		evt := event.EvtPeerStateChange{v, network.Connected}
+		evt := event.EvtPeerConnectednessChanged{p, network.Connected}
 		b.basicHost().emitters.evtPeerStateChange.Emit(evt)
 	}
 }
@@ -40,7 +40,7 @@ func (b *basicHostNotifiee) Disconnected(n network.Network, v network.Conn) {
 
 	// Are we no longer connected to the peer ?
 	if n.Connectedness(p) == network.NotConnected {
-		evt := event.EvtPeerStateChange{v, network.NotConnected}
+		evt := event.EvtPeerConnectednessChanged{p, network.NotConnected}
 		b.basicHost().emitters.evtPeerStateChange.Emit(evt)
 	}
 }

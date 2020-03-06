@@ -22,7 +22,7 @@ func TestBasicHostNotifieeSimple(t *testing.T) {
 	defer h2.Close()
 
 	// subscribe for notifications on h1
-	s, err := h1.EventBus().Subscribe(&event.EvtPeerStateChange{})
+	s, err := h1.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	defer s.Close()
 	require.NoError(t, err)
 
@@ -30,10 +30,10 @@ func TestBasicHostNotifieeSimple(t *testing.T) {
 	require.NoError(t, h1.Connect(ctx, peer.AddrInfo{h2.ID(), h2.Addrs()}))
 	select {
 	case e := <-s.Out():
-		evt, ok := e.(event.EvtPeerStateChange)
+		evt, ok := e.(event.EvtPeerConnectednessChanged)
 		require.True(t, ok)
-		require.Equal(t, network.Connected, evt.NewState)
-		require.Equal(t, h2.ID(), evt.Connection.RemotePeer())
+		require.Equal(t, network.Connected, evt.Connectedness)
+		require.Equal(t, h2.ID(), evt.Peer)
 	case <-time.After(1 * time.Second):
 		t.Fatal("did not get notification")
 	}
@@ -50,10 +50,10 @@ func TestBasicHostNotifieeSimple(t *testing.T) {
 	require.NoError(t, h1.Network().ClosePeer(h2.ID()))
 	select {
 	case e := <-s.Out():
-		evt, ok := e.(event.EvtPeerStateChange)
+		evt, ok := e.(event.EvtPeerConnectednessChanged)
 		require.True(t, ok)
-		require.Equal(t, network.NotConnected, evt.NewState)
-		require.Equal(t, h2.ID(), evt.Connection.RemotePeer())
+		require.Equal(t, network.NotConnected, evt.Connectedness)
+		require.Equal(t, h2.ID(), evt.Peer)
 	case <-time.After(1 * time.Second):
 		t.Fatal("did not get disconnect notification")
 	}
@@ -67,7 +67,7 @@ func TestBasicHostNotifieeConcurrent(t *testing.T) {
 	defer h2.Close()
 
 	// subscribe for notifications on h1
-	s, err := h1.EventBus().Subscribe(&event.EvtPeerStateChange{})
+	s, err := h1.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
 	defer s.Close()
 	require.NoError(t, err)
 
@@ -92,12 +92,12 @@ func TestBasicHostNotifieeConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	var finalState event.EvtPeerStateChange
+	var finalState event.EvtPeerConnectednessChanged
 LOOP:
 	for {
 		select {
 		case e := <-s.Out():
-			evt, ok := e.(event.EvtPeerStateChange)
+			evt, ok := e.(event.EvtPeerConnectednessChanged)
 			require.True(t, ok)
 			finalState = evt
 		case <-time.After(5 * time.Second):
@@ -105,7 +105,6 @@ LOOP:
 		}
 	}
 
-	require.NotNil(t, finalState.Connection, "did not receive any notification")
-	require.Equal(t, h2.ID(), finalState.Connection.RemotePeer())
-	require.Equal(t, h1.network.Connectedness(h2.ID()), finalState.NewState)
+	require.Equal(t, h2.ID(), finalState.Peer)
+	require.Equal(t, h1.network.Connectedness(h2.ID()), finalState.Connectedness)
 }

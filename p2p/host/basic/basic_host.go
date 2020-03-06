@@ -145,7 +145,7 @@ func NewHost(ctx context.Context, net network.Network, opts *HostOpts) (*BasicHo
 		return nil, err
 	}
 
-	if h.emitters.evtPeerStateChange, err = h.eventbus.Emitter(&event.EvtPeerStateChange{}); err != nil {
+	if h.emitters.evtPeerStateChange, err = h.eventbus.Emitter(&event.EvtPeerConnectednessChanged{}); err != nil {
 		return nil, err
 	}
 
