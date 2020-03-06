@@ -3,13 +3,14 @@ package identify
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/libp2p/go-eventbus"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/event"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/record"
 	"github.com/multiformats/go-multiaddr"
-	"sync"
 )
 
 // peerRecordManager creates new signed peer.PeerRecords that can
