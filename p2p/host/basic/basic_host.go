@@ -91,6 +91,9 @@ type BasicHost struct {
 		evtLocalProtocolsUpdated event.Emitter
 	}
 
+	observedConnectednessLk sync.RWMutex
+	observedConnectedness   map[peer.ID]network.Connectedness
+
 	stripedConnNotifLocks [256]sync.Mutex
 }
 
@@ -132,12 +135,13 @@ type HostOpts struct {
 // NewHost constructs a new *BasicHost and activates it by attaching its stream and connection handlers to the given inet.Network.
 func NewHost(ctx context.Context, net network.Network, opts *HostOpts) (*BasicHost, error) {
 	h := &BasicHost{
-		network:      net,
-		mux:          msmux.NewMultistreamMuxer(),
-		negtimeout:   DefaultNegotiationTimeout,
-		AddrsFactory: DefaultAddrsFactory,
-		maResolver:   madns.DefaultResolver,
-		eventbus:     eventbus.NewBus(),
+		network:               net,
+		mux:                   msmux.NewMultistreamMuxer(),
+		negtimeout:            DefaultNegotiationTimeout,
+		AddrsFactory:          DefaultAddrsFactory,
+		maResolver:            madns.DefaultResolver,
+		eventbus:              eventbus.NewBus(),
+		observedConnectedness: make(map[peer.ID]network.Connectedness),
 	}
 
 	var err error
