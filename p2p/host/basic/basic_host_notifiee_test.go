@@ -38,8 +38,15 @@ func TestBasicHostNotifieeSimple(t *testing.T) {
 		t.Fatal("did not get notification")
 	}
 
-	// connect again and make sure we do not get a notification
-	require.NoError(t, h2.Connect(ctx, peer.AddrInfo{h1.ID(), h1.Addrs()}))
+	// connected -> connected does not result in a notification
+	(*basicHostNotifiee)(h1).Connected(h1.network, h1.network.ConnsToPeer(h2.ID())[0])
+	select {
+	case <-s.Out():
+		t.Fatal("should not receive any event")
+	case <-time.After(1 * time.Second):
+	}
+
+	(*basicHostNotifiee)(h1).Disconnected(h1.network, h1.network.ConnsToPeer(h2.ID())[0])
 	select {
 	case <-s.Out():
 		t.Fatal("should not receive any event")
