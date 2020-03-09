@@ -20,11 +20,12 @@ func (b *basicHostNotifiee) Connected(n network.Network, v network.Conn) {
 	p := v.RemotePeer()
 
 	// While the swarm Connected/Disconnected notifications for a single connection are guaranteed
-	// to be serialized, notifications for different connections between the same peer are not as they are fired
-	// concurrently on different go-routines i.e. We could observe a "Connected" notification for a new connection Conn2
-	// with a peer Px before we observe the "Disconnected" notification for an existing connection Conn1 with Px even though Conn1 was disconnected before Conn2 was
-	// created.
-	// This striped lock ensures that both "Connected" & "Disconnected" notifications synchronize on "change in connectedness" between two peers.
+	// to be serialized, notifications for different connections between the same peer are not
+	// as they are fired concurrently on different go-routines i.e. We could observe a "Connected" notification
+	// for a new connection Conn2 with a peer Px before we observe the "Disconnected" notification for an existing
+	// connection Conn1 with Px even though Conn1 was disconnected before Conn2 was created.
+	// This striped lock ensures that both "Connected" & "Disconnected" notifications synchronize on
+	// "change in connectedness" between two peers.
 	indexForLk := len(p) - 1
 	lk := &b.stripedConnNotifLocks[p[indexForLk]]
 	lk.Lock()
