@@ -147,13 +147,13 @@ func Peerstore(ps peerstore.Peerstore) Option {
 }
 
 // PrivateNetwork configures libp2p to use the given private network protector.
-func PrivateNetwork(prot pnet.Protector) Option {
+func PrivateNetwork(psk pnet.PSK) Option {
 	return func(cfg *Config) error {
-		if cfg.Protector != nil {
+		if cfg.PSK != nil {
 			return fmt.Errorf("cannot specify multiple private network options")
 		}
 
-		cfg.Protector = prot
+		cfg.PSK = psk
 		return nil
 	}
 }

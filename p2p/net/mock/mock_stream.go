@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/mux"
 	"github.com/libp2p/go-libp2p-core/network"
 	protocol "github.com/libp2p/go-libp2p-core/protocol"
 )
@@ -29,7 +30,6 @@ type stream struct {
 	stat     network.Stat
 }
 
-var ErrReset error = errors.New("stream reset")
 var ErrClosed error = errors.New("stream closed")
 
 type transportObject struct {
@@ -98,8 +98,8 @@ func (s *stream) Close() error {
 
 func (s *stream) Reset() error {
 	// Cancel any pending reads/writes with an error.
-	s.write.CloseWithError(ErrReset)
-	s.read.CloseWithError(ErrReset)
+	s.write.CloseWithError(mux.ErrReset)
+	s.read.CloseWithError(mux.ErrReset)
 
 	select {
 	case s.reset <- struct{}{}:
@@ -206,7 +206,7 @@ func (s *stream) transport() {
 				case s.reset <- struct{}{}:
 				default:
 				}
-				return ErrReset
+				return mux.ErrReset
 			}
 			if err := drainBuf(); err != nil {
 				return err
@@ -226,14 +226,14 @@ func (s *stream) transport() {
 		// Reset takes precedent.
 		select {
 		case <-s.reset:
-			s.writeErr = ErrReset
+			s.writeErr = mux.ErrReset
 			return
 		default:
 		}
 
 		select {
 		case <-s.reset:
-			s.writeErr = ErrReset
+			s.writeErr = mux.ErrReset
 			return
 		case <-s.close:
 			if err := drainBuf(); err != nil {

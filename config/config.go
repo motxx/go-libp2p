@@ -56,7 +56,7 @@ type Config struct {
 	Muxers             []MsMuxC
 	SecurityTransports []MsSecC
 	Insecure           bool
-	Protector          pnet.Protector
+	PSK                pnet.PSK
 
 	RelayCustom bool
 	Relay       bool
@@ -84,7 +84,7 @@ type Config struct {
 // This function consumes the config. Do not reuse it (really!).
 func (cfg *Config) NewNode(ctx context.Context) (host.Host, error) {
 	// Check this early. Prevents us from even *starting* without verifying this.
-	if pnet.ForcePrivateNetwork && cfg.Protector == nil {
+	if pnet.ForcePrivateNetwork && len(cfg.PSK) == 0 {
 		log.Error("tried to create a libp2p node with no Private" +
 			" Network Protector but usage of Private Networks" +
 			" is forced by the enviroment")
@@ -145,7 +145,7 @@ func (cfg *Config) NewNode(ctx context.Context) (host.Host, error) {
 	}
 
 	upgrader := new(tptu.Upgrader)
-	upgrader.Protector = cfg.Protector
+	upgrader.PSK = cfg.PSK
 	upgrader.Filters = swrm.Filters
 	if cfg.Insecure {
 		upgrader.Secure = makeInsecureTransport(pid, cfg.PeerKey)
@@ -207,19 +207,6 @@ func (cfg *Config) NewNode(ctx context.Context) (host.Host, error) {
 			return nil, fmt.Errorf("cannot enable autorelay; relay is not enabled")
 		}
 
-		if router == nil {
-			h.Close()
-			return nil, fmt.Errorf("cannot enable autorelay; no routing for discovery")
-		}
-
-		crouter, ok := router.(routing.ContentRouting)
-		if !ok {
-			h.Close()
-			return nil, fmt.Errorf("cannot enable autorelay; no suitable routing for discovery")
-		}
-
-		discovery := discovery.NewRoutingDiscovery(crouter)
-
 		hop := false
 		for _, opt := range cfg.RelayOpts {
 			if opt == circuit.OptHop {
@@ -228,11 +215,28 @@ func (cfg *Config) NewNode(ctx context.Context) (host.Host, error) {
 			}
 		}
 
-		if hop {
-			// advertise ourselves
-			relay.Advertise(ctx, discovery)
+		if !hop && len(cfg.StaticRelays) > 0 {
+			_ = relay.NewAutoRelay(swrm.Context(), h, nil, router, cfg.StaticRelays)
 		} else {
-			_ = relay.NewAutoRelay(swrm.Context(), h, discovery, router, cfg.StaticRelays)
+			if router == nil {
+				h.Close()
+				return nil, fmt.Errorf("cannot enable autorelay; no routing for discovery")
+			}
+
+			crouter, ok := router.(routing.ContentRouting)
+			if !ok {
+				h.Close()
+				return nil, fmt.Errorf("cannot enable autorelay; no suitable routing for discovery")
+			}
+
+			discovery := discovery.NewRoutingDiscovery(crouter)
+
+			if hop {
+				// advertise ourselves
+				relay.Advertise(ctx, discovery)
+			} else {
+				_ = relay.NewAutoRelay(swrm.Context(), h, discovery, router, cfg.StaticRelays)
+			}
 		}
 	}
 
